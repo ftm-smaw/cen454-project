@@ -1,19 +1,3 @@
-"""
-Part 2: Training the Classifier
-
-HOW THIS FILE IS ORGANISED
-───────────────────────────
- 0. Settings (paths, hyper-parameters)
- 1. Classical CV preprocessing  ← Topics 5, 6, 7 techniques
- 2. Dataset loader
- 3. Data augmentation / transforms
- 4. Build the neural-network model
- 5. Training loop
- 6. Evaluation (accuracy, F1, confusion matrix)
- 7. Inference / prediction (for evaluation day)
- 8. Main – ties everything together
-"""
-
 import os, copy, time, csv, random
 from pathlib import Path
 import numpy as np
@@ -30,15 +14,13 @@ import matplotlib.pyplot as plt
 import seaborn as sns
 
 
-#  SETTINGS  –  edit these if your folder names are different
+#edit folder names if they end up being different
 
 DATA_ROOT      = Path("data")      # root folder that holds train/ val/ test/
-CHECKPOINT_DIR = Path("checkpoints")
+CHECKPOINT_DIR = Path("checkpoints")  #??
 CHECKPOINT_DIR.mkdir(exist_ok=True)
-
-# The 4 classes we must predict (order matters – index 0=safe, 1=gun …)
 CLASS_NAMES = ["gun", "knife", "safe", "shuriken"]
-NUM_CLASSES = len(CLASS_NAMES)       # 4
+NUM_CLASSES = len(CLASS_NAMES)
 
 # Training hyper-parameters
 BATCH_SIZE   = 32     # images processed in one forward pass
@@ -54,52 +36,24 @@ DEVICE = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 print(f"[INFO] Running on: {DEVICE}")
 
 
-#  1.  CLASSICAL CV PREPROCESSING PIPELINE
-#      Techniques from Topics 5, 6, 7
-
+#CV PREPROCESSING PIPELINE
 def classical_preprocess(img_bgr: np.ndarray) -> np.ndarray:
-    # Convert from BGR (OpenCV default) → LAB colour space
-    # L = lightness (0-255), A = green↔red, B = blue↔yellow
     lab = cv2.cvtColor(img_bgr, cv2.COLOR_BGR2LAB)
     l_channel, a_channel, b_channel = cv2.split(lab)
 
-    # Apply CLAHE to the L (brightness) channel only
+
     clahe = cv2.createCLAHE(
-        clipLimit=2.0,          # cap to avoid over-amplifying noise
-        tileGridSize=(8, 8)     # image divided into 8×8 tiles
+        clipLimit=2.0,
+        tileGridSize=(8, 8)
     )
     l_channel = clahe.apply(l_channel)
 
-    # Merge the enhanced L back with the original A and B channels
     lab = cv2.merge([l_channel, a_channel, b_channel])
-    img_bgr = cv2.cvtColor(lab, cv2.COLOR_LAB2BGR)   # back to BGR
+    img_bgr = cv2.cvtColor(lab, cv2.COLOR_LAB2BGR)
 
-    """
-    ┌─────────────────────────────────────────────────────────────┐
-    │ STEP 2 – Gaussian Smoothing / Denoising  (Topic 5, Topic 6)│
-    │                                                             │
-    │ Topic 5 covered colour image smoothing by filtering each   │
-    │ channel with a mask of all 1s (averaging).                 │
-    │ Gaussian blur does the same but with a weighted mask       │
-    │ (centre pixel gets more weight than edges).                │
-    │ This removes random pixel noise from the scan.             │
-    └─────────────────────────────────────────────────────────────┘
-    """
     # (3,3) = tiny 3×3 kernel  |  sigmaX=0.5 = very light blur
     blurred = cv2.GaussianBlur(img_bgr, (3, 3), sigmaX=0.5)
 
-    """
-    ┌─────────────────────────────────────────────────────────────┐
-    │ STEP 3 – Unsharp Mask (Edge Sharpening)  (Topic 5)         │
-    │                                                             │
-    │ Topic 5 showed colour image sharpening using spatial masks.│
-    │ Unsharp masking = original − blurred version.              │
-    │ This makes edges (gun outline, knife blade) sharper so the │
-    │ model can detect them more easily.                         │
-    │                                                             │
-    │ Formula: result = 1.5 × original − 0.5 × blurred          │
-    └─────────────────────────────────────────────────────────────┘
-    """
     img_bgr = cv2.addWeighted(
         img_bgr, 1.5,    # original  × 1.5
         blurred, -0.5,   # blurred   × −0.5  (subtract)
@@ -108,39 +62,8 @@ def classical_preprocess(img_bgr: np.ndarray) -> np.ndarray:
 
     return img_bgr
 
-    """
-    NOTE on binary masks (professor's guideline):
-    The dataset annotation masks have pixel values in [0, 1].
-    To VIEW them properly multiply by 255:
-        mask_visible = mask_array * 255
-    We do NOT need this for classification (Part 2), but Part 3
-    (localisation) will need it.
-    """
-
-
-# ═══════════════════════════════════════════════════════════════════
-#  2.  DATASET – loads images from folders and applies preprocessing
-# ═══════════════════════════════════════════════════════════════════
-
+#loads images from dataset and applies preprocessing
 class BaggageDataset(Dataset):
-    """
-    Reads images organised like this:
-
-        dataset/
-          train/
-            safe/        ← images of safe bags
-            gun/         ← images with guns
-            knife/       ← images with knives
-            shuriken/    ← images with shurikens
-          val/
-            safe/ gun/ knife/ shuriken/
-          test/
-            img1.jpg  img2.jpg  ...   ← no sub-folders on test day
-
-    PyTorch's DataLoader calls __getitem__(index) repeatedly
-    to feed batches of images into the model during training.
-    """
-
     def __init__(self, root: Path, split: str,
                  transform=None, apply_classical: bool = True):
         self.samples         = []    # list of (image_path, label_number)
@@ -189,13 +112,11 @@ class BaggageDataset(Dataset):
         if self.transform:
             img_pil = self.transform(img_pil)
 
-        # Return the processed image tensor and its numeric label
         return img_pil, label
 
 
-# ═══════════════════════════════════════════════════════════════════
-#  3.  DATA TRANSFORMS  (what happens to each image before training)
-# ═══════════════════════════════════════════════════════════════════
+
+#what happens to each image before training
 
 # These are the mean and std that ImageNet was normalised with.
 # EfficientNet was pretrained on ImageNet so we must use the same values.
@@ -234,23 +155,9 @@ val_transforms = transforms.Compose([
     transforms.Normalize(mean=IMAGENET_MEAN, std=IMAGENET_STD),
 ])
 
-
-# ═══════════════════════════════════════════════════════════════════
-#  4.  BUILD THE MODEL
-#      EfficientNet-B0 pretrained → replace final layer for 4 classes
-# ═══════════════════════════════════════════════════════════════════
-
+#BUILD THE MODEL
 def build_model(num_classes: int = NUM_CLASSES,
                 freeze_backbone: bool = False) -> nn.Module:
-    """
-    Transfer Learning approach:
-      1. Download EfficientNet-B0 already trained on 1.2M ImageNet images.
-         It already knows how to detect shapes, edges, textures.
-      2. Replace its output layer (originally 1000 classes) with our
-         own layer for 4 classes (safe / gun / knife / shuriken).
-      3. Optionally freeze the backbone so only our new layer trains
-         (used in warm-up phase to avoid destroying pretrained weights).
-    """
     # Load EfficientNet-B0 with pretrained ImageNet weights
     weights = EfficientNet_B0_Weights.IMAGENET1K_V1
     model   = models.efficientnet_b0(weights=weights)
@@ -276,9 +183,7 @@ def build_model(num_classes: int = NUM_CLASSES,
     return model.to(DEVICE)   # move model to GPU (if available) or CPU
 
 
-# ═══════════════════════════════════════════════════════════════════
-#  5.  TRAINING LOOP
-# ═══════════════════════════════════════════════════════════════════
+#TRAINING LOOP
 
 def train_model(model, dataloaders, criterion, optimizer,
                 scheduler, num_epochs: int = NUM_EPOCHS):
@@ -388,22 +293,9 @@ def train_model(model, dataloaders, criterion, optimizer,
     return model, history
 
 
-# ═══════════════════════════════════════════════════════════════════
 #  6.  EVALUATION
-# ═══════════════════════════════════════════════════════════════════
 
 def evaluate(model, dataloader, split_name: str = "Validation"):
-    """
-    Measures how well the model performs using the rubric metrics:
-      • Accuracy
-      • Macro F1-Score  (important when class sizes differ – e.g. fewer
-        shuriken images than gun images)
-      • Classification Score = 0.7 × Accuracy + 0.3 × Macro F1  (from rubric)
-
-    Also plots a Confusion Matrix – rows = true labels, cols = predicted.
-    This is useful to see WHICH classes are being confused with each other.
-    (e.g. if the model often confuses knife for shuriken)
-    """
     model.eval()
     all_preds, all_labels = [], []
 
@@ -428,10 +320,7 @@ def evaluate(model, dataloader, split_name: str = "Validation"):
     print(f"  Classification Score  : {cls_score:.4f}  (0.7×acc + 0.3×F1)")
     print(f"\n{classification_report(all_labels, all_preds, target_names=CLASS_NAMES)}")
 
-    # ── Confusion Matrix ────────────────────────────────────────────
-    # Related to Topic 7 (segmentation evaluation concepts)
-    # Each cell [i][j] = how many class-i images were predicted as class-j
-    # Diagonal = correct predictions
+
     cm = confusion_matrix(all_labels, all_preds)
     plt.figure(figsize=(7, 6))
     sns.heatmap(cm, annot=True, fmt="d", cmap="Blues",
@@ -449,7 +338,6 @@ def evaluate(model, dataloader, split_name: str = "Validation"):
 
 
 def plot_training_curves(history: dict):
-    """Save loss and accuracy curves so you can see how training went."""
     epochs = range(1, len(history["train_loss"]) + 1)
     fig, axes = plt.subplots(1, 2, figsize=(14, 5))
 
@@ -474,9 +362,7 @@ def plot_training_curves(history: dict):
     print(f"[INFO] Training curves saved → {path}")
 
 
-# ═══════════════════════════════════════════════════════════════════
-#  7.  INFERENCE  –  used on evaluation day
-# ═══════════════════════════════════════════════════════════════════
+# INFERENCE  used on evaluation day
 
 def predict_folder(model, folder: Path,
                    output_csv: Path = Path("predictions.csv")):
@@ -530,9 +416,7 @@ def predict_folder(model, folder: Path,
     print(f"[INFO] Predictions written → {output_csv}  ({len(rows)} images)")
 
 
-# ═══════════════════════════════════════════════════════════════════
-#  8.  MAIN  –  runs everything in order
-# ═══════════════════════════════════════════════════════════════════
+#MAIN
 
 def set_seed(seed: int = SEED):
     """Make results reproducible across runs."""
@@ -558,10 +442,7 @@ def main():
 
     dataloaders = {"train": train_loader, "val": val_loader}
 
-    # ── Step 2: Loss function ──────────────────────────────────────
-    # CrossEntropyLoss = standard loss for multi-class classification
-    # label_smoothing=0.1 → instead of "100% gun", use "90% gun, 3.3% others"
-    # This prevents the model from becoming overconfident
+
     criterion = nn.CrossEntropyLoss(label_smoothing=0.1)
 
     # ── Step 3: PHASE 1 – Train only the new head (backbone frozen) ─
