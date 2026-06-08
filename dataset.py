@@ -65,7 +65,7 @@ def split_dataset(df):
 
 if __name__ == "__main__":
     # Point to the data directory you just created
-    RAW_IMAGE_DIR = os.path.join("data")
+    RAW_IMAGE_DIR = os.path.join("data", "train")
     PROCESSED_DIR = os.path.join("data", "processed")
 
     # Run the validation and loading pipeline
