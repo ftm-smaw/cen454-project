@@ -535,7 +535,6 @@ def evaluate(model: nn.Module, val_loader: DataLoader):
     plt.tight_layout()
     cm_path = os.path.join(OUTPUT_DIR, "confusion_matrix.png")
     plt.savefig(cm_path, dpi=150)
-    plt.show()
     print(f"  Confusion matrix saved → {cm_path}")
 
     return acc, macro_f1, clf_score
@@ -623,7 +622,6 @@ def plot_history(history: dict):
     plt.tight_layout()
     hist_path = os.path.join(OUTPUT_DIR, "training_history.png")
     plt.savefig(hist_path, dpi=150)
-    plt.show()
     print(f"  Training history plot saved → {hist_path}")
 
 
