@@ -55,9 +55,9 @@ from PIL import Image
 # ─────────────────────────────────────────────────────────────────────────────
 # 1. CONFIGURATION  (edit these to match your setup)
 # ─────────────────────────────────────────────────────────────────────────────
-DATA_ROOT = "./data/train"         # folder structure: dataset/<class>/<images>
+DATA_ROOT = "./data/train"         # folder structure: dataset/train/<class>/<images>
 OUTPUT_DIR  = "./outputs"          # where checkpoints and CSVs are saved
-CHECKPOINT  = "best_model.pth"     # filename for the best model weights
+CHECKPOINT  = "trained_model.pth"     # filename for the best model weights
 
 CLASS_NAMES = ["safe", "gun", "knife", "shuriken"]   # must match subfolder names
 NUM_CLASSES = len(CLASS_NAMES)     # 4 – replaces ImageNet's 1 000-class head
@@ -216,6 +216,12 @@ val_transforms = transforms.Compose([
     transforms.ToTensor(),
     transforms.Normalize(mean=IMAGENET_MEAN, std=IMAGENET_STD),
 ])
+
+inference_transform = transforms.Compose([
+        transforms.Resize((IMG_SIZE, IMG_SIZE)),
+        transforms.ToTensor(),
+        transforms.Normalize(mean=IMAGENET_MEAN, std=IMAGENET_STD),
+    ])
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -560,12 +566,6 @@ def generate_predictions(model: nn.Module, test_dir: str,
     """
     print(f"\n[5/5] Generating predictions from: {test_dir}")
     model.eval()
-
-    inference_transform = transforms.Compose([
-        transforms.Resize((IMG_SIZE, IMG_SIZE)),
-        transforms.ToTensor(),
-        transforms.Normalize(mean=IMAGENET_MEAN, std=IMAGENET_STD),
-    ])
 
     SUPPORTED_EXTS = {".jpg", ".jpeg", ".png", ".bmp", ".tiff", ".webp"}
     results = []

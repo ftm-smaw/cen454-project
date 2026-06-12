@@ -7,3 +7,7 @@ data/
 models/
 outputs/
 *.csv
+
+.DS_Store
+.idea/
+
